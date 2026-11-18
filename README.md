@@ -1,3 +1,13 @@
+# FormSense
+
+A voice copilot in your browser that explains any form field, out loud, with official sources. Click a field, ask "what is this asking for?", and FormSense tells you.
+
+**Status:** work in progress. Done so far: a Chrome side panel you can talk to (see [extension/README.md](extension/README.md)), plus a one-click launcher (`start-web.bat`). Next: reading the form you're on.
+
+Built on the [AssemblyAI + Parallel voice starter](https://github.com/hsingh-aai/assemblyai-parallel-voice-agent). The starter's original README follows.
+
+---
+
 # AssemblyAI + Parallel voice starter
 
 Talk to a voice agent in your terminal. AssemblyAI handles speech and replies. Parallel’s hosted MCP server gives the agent three tools: Search finds evidence, Fetch reads a particular public page, and Decisions estimates a probability or chooses among supplied options. The first conversation only needs an AssemblyAI key. [Parallel MCP](https://docs.parallel.ai/integrations/mcp/quickstart)

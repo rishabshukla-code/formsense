@@ -1,0 +1,44 @@
+:root {
+  --bg: #f6f5f1; --card: #ffffff; --text: #1f1e1b; --muted: #6b6a64; --line: #e3e1d9;
+  --accent: #534ab7; --accent-text: #ffffff; --danger: #b3261e; --ok: #0f6e56; --warn: #854f0b;
+  --you: #eeedfe; --agent: #f1efe8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161614; --card: #201f1c; --text: #ecebe6; --muted: #a3a29b; --line: #34332e;
+    --accent: #7f77dd; --accent-text: #ffffff; --danger: #f09595; --ok: #5dcaa5; --warn: #ef9f27;
+    --you: #2b2856; --agent: #2c2c2a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+h1 { font-size: 19px; font-weight: 600; margin: 0; }
+.sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.listening { color: var(--ok); border-color: currentColor; }
+.pill.thinking { color: var(--warn); border-color: currentColor; }
+.pill.speaking { color: var(--accent); border-color: currentColor; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; font-size: 14px; border-radius: 10px; padding: 8px 14px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.muted { background: #b3261e; color: #fff; border-color: #b3261e; }
+button.end { color: var(--danger); }
+.meter { margin-top: 10px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+#level { height: 100%; width: 0; background: var(--ok); transition: width 80ms linear; }
+.hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.error { color: var(--danger); font-size: 13px; margin: 8px 0 0; }
+.error p { margin: 0 0 6px; }
+#log { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 120px; max-height: 70vh; overflow-y: auto; }
+.msg { padding: 8px 12px; border-radius: 12px; max-width: 90%; }
+.msg .who { font-size: 11px; color: var(--muted); display: block; }
+.msg.you { align-self: flex-end; background: var(--you); }
+.msg.agent { align-self: flex-start; background: var(--agent); }
+.msg.partial { opacity: .7; }
+.empty { color: var(--muted); font-size: 13px; text-align: center; margin: auto; }
+.setup { max-width: 420px; margin: 15vh auto; text-align: center; }
+.setup p { color: var(--muted); }
+.ok { color: var(--ok); }

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form Copilot</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Form Copilot</h1>
+      <p class="sub">Ask about the form you're filling in</p>
+    </div>
+    <span id="status" class="pill">Not connected</span>
+  </header>
+
+  <div class="card">
+    <div class="controls">
+      <button id="start" class="primary">Start talking</button>
+      <button id="mute" disabled aria-pressed="false">Mute</button>
+      <button id="end" class="end" disabled>End</button>
+    </div>
+    <div class="meter" title="Microphone level"><div id="level"></div></div>
+    <p class="hint">The bar moves when the panel hears you. Press M to mute or unmute.</p>
+    <div id="error" class="error" hidden>
+      <p id="error-text"></p>
+      <button id="mic-setup" hidden>Set up microphone</button>
+    </div>
+    <div id="log"><p class="empty" id="empty">The conversation shows up here.</p></div>
+  </div>
+</main>
+<script src="vendor/livekit-client.umd.js"></script>
+<script src="sidepanel.js"></script>
+</body>
+</html>

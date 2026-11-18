@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice agent</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --text: #1f1e1b; --muted: #6b6a64; --line: #e3e1d9;
+    --accent: #534ab7; --accent-text: #ffffff; --danger: #b3261e; --ok: #0f6e56; --warn: #854f0b;
+    --you: #eeedfe; --agent: #f1efe8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --card: #201f1c; --text: #ecebe6; --muted: #a3a29b; --line: #34332e;
+      --accent: #7f77dd; --accent-text: #ffffff; --danger: #f09595; --ok: #5dcaa5; --warn: #ef9f27;
+      --you: #2b2856; --agent: #2c2c2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; }
+  .sub { color: var(--muted); font-size: 14px; margin: 2px 0 0; }
+  .pill { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.listening { color: var(--ok); border-color: currentColor; }
+  .pill.thinking { color: var(--warn); border-color: currentColor; }
+  .pill.speaking { color: var(--accent); border-color: currentColor; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+  button { font: inherit; font-size: 15px; border-radius: 10px; padding: 10px 18px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.muted { background: #b3261e; color: #fff; border-color: #b3261e; }
+  button.end { color: var(--danger); }
+  .hint { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+  #log { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; min-height: 120px; max-height: 55vh; overflow-y: auto; }
+  .msg { padding: 8px 12px; border-radius: 12px; max-width: 85%; }
+  .msg .who { font-size: 12px; color: var(--muted); display: block; }
+  .msg.you { align-self: flex-end; background: var(--you); }
+  .msg.agent { align-self: flex-start; background: var(--agent); }
+  .msg.partial { opacity: .7; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; margin: auto; }
+  .error { color: var(--danger); font-size: 14px; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Voice agent</h1>
+      <p class="sub">Talk to it, it looks things up on the web</p>
+    </div>
+    <span id="status" class="pill">Not connected</span>
+  </header>
+
+  <div class="card">
+    <div class="controls">
+      <button id="start" class="primary">Start talking</button>
+      <button id="mute" disabled aria-pressed="false">Mute</button>
+      <button id="end" class="end" disabled>End</button>
+    </div>
+    <p class="hint">Press M to mute or unmute. The agent stops hearing you while muted.</p>
+    <p id="error" class="error" hidden></p>
+    <div id="log"><p class="empty" id="empty">The conversation shows up here.</p></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.4/dist/livekit-client.umd.js"></script>
+<script>
+  const { Room, RoomEvent, Track } = LivekitClient;
+  const $ = (id) => document.getElementById(id);
+  const startBtn = $("start"), muteBtn = $("mute"), endBtn = $("end");
+  const statusEl = $("status"), logEl = $("log"), errEl = $("error");
+  const bubbles = new Map();
+  let room = null;
+  let agentTimer = null;
+
+  const STATES = { listening: "Listening", thinking: "Thinking", speaking: "Speaking", initializing: "Starting up" };
+
+  function setStatus(text, cls = "") { statusEl.textContent = text; statusEl.className = "pill " + cls; }
+  function showError(text) { errEl.textContent = text; errEl.hidden = !text; }
+
+  function upsertBubble(id, who, text, final) {
+    $("empty")?.remove();
+    let el = bubbles.get(id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "msg " + who;
+      el.innerHTML = '<span class="who"></span><span class="text"></span>';
+      el.querySelector(".who").textContent = who === "you" ? "You" : "Agent";
+      logEl.appendChild(el);
+      bubbles.set(id, el);
+    }
+    el.querySelector(".text").textContent = text;
+    el.classList.toggle("partial", !final);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function updateMuteButton() {
+    const on = room?.localParticipant.isMicrophoneEnabled ?? false;
+    muteBtn.textContent = on ? "Mute" : "Unmute";
+    muteBtn.classList.toggle("muted", !on);
+    muteBtn.setAttribute("aria-pressed", String(!on));
+  }
+
+  async function toggleMute() {
+    if (!room) return;
+    muteBtn.disabled = true;
+    try {
+      if (room.localParticipant.isMicrophoneEnabled) {
+        await room.localParticipant.setMicrophoneEnabled(false);
+        updateMuteButton();
+      } else {
+        await enableMic();
+      }
+    } finally {
+      muteBtn.disabled = false;
+    }
+  }
+
+  async function start() {
+    showError("");
+    startBtn.disabled = true;
+    setStatus("Connecting…");
+    try {
+      const res = await fetch("/api/token");
+      if (!res.ok) throw new Error("Token request failed (" + res.status + ")");
+      const { url, token } = await res.json();
+
+      room = new Room({ adaptiveStream: true, dynacast: true });
+
+      room.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Audio) document.body.appendChild(track.attach());
+      });
+      room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+      room.on(RoomEvent.ParticipantAttributesChanged, (changed, participant) => {
+        const state = changed["lk.agent.state"];
+        if (participant.isAgent && state) setStatus(STATES[state] || state, state);
+      });
+      room.on(RoomEvent.ParticipantConnected, (p) => {
+        if (!p.isAgent) return;
+        clearTimeout(agentTimer);
+        setStatus("Agent joined", "listening");
+      });
+      room.on(RoomEvent.ParticipantDisconnected, (p) => { if (p.isAgent) setStatus("Agent left"); });
+      room.on(RoomEvent.Disconnected, () => cleanup());
+
+      room.registerTextStreamHandler("lk.transcription", async (reader, from) => {
+        const attrs = reader.info.attributes || {};
+        const id = attrs["lk.segment_id"] || reader.info.id;
+        const who = from.identity === room.localParticipant.identity ? "you" : "agent";
+        let text = "";
+        for await (const chunk of reader) {
+          // User segments arrive as whole updates; agent replies stream token by token.
+          text = who === "you" ? chunk : text + chunk;
+          upsertBubble(id, who, text, false);
+        }
+        upsertBubble(id, who, text, who === "agent" || attrs["lk.transcription_final"] === "true");
+      });
+
+      await room.connect(url, token);
+      await room.startAudio();
+      setStatus("Waiting for agent…");
+      agentTimer = setTimeout(() => {
+        if (room && ![...room.remoteParticipants.values()].some((p) => p.isAgent)) {
+          setStatus("No agent");
+          showError("The agent didn't join. Check the launcher window for errors, then press End and Start talking again.");
+        }
+      }, 20000);
+      muteBtn.disabled = false;
+      endBtn.disabled = false;
+      await enableMic();
+    } catch (err) {
+      console.error(err);
+      await room?.disconnect();
+      cleanup();
+      showError("Couldn't connect: " + err.message + ". Is the launcher still running?");
+    }
+  }
+
+  async function enableMic() {
+    try {
+      await room.localParticipant.setMicrophoneEnabled(true);
+      showError("");
+    } catch (err) {
+      console.error(err);
+      showError("Microphone access was blocked. Allow it in the address bar, then press Unmute.");
+    }
+    updateMuteButton();
+  }
+
+  function cleanup() {
+    clearTimeout(agentTimer);
+    room = null;
+    startBtn.disabled = false;
+    muteBtn.disabled = true;
+    endBtn.disabled = true;
+    muteBtn.textContent = "Mute";
+    muteBtn.classList.remove("muted");
+    showError("");
+    setStatus("Not connected");
+  }
+
+  startBtn.addEventListener("click", start);
+  muteBtn.addEventListener("click", toggleMute);
+  endBtn.addEventListener("click", () => room?.disconnect());
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "m" || e.key === "M") && room && !e.repeat && e.target === document.body) toggleMute();
+  });
+</script>
+</body>
+</html>
