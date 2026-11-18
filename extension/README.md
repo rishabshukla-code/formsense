@@ -20,7 +20,23 @@ After you change a file here, click the reload arrow on the extension's card in 
 5. Click a field on the form and ask about it: "What is this asking for?"
 6. **First time only:** Chrome can't ask for the microphone inside a side panel. Click **Set up microphone**, allow it in the tab that opens, close that tab, then press **Unmute** in the panel.
 
-For now FormSense only reads the practice form. It will work on other sites later.
+## Using it on real websites
+
+FormSense reads the practice form out of the box. For other sites it needs your OK once:
+
+1. Open a form on any website and ask about a field.
+2. The panel shows **Allow on websites**. Click it, then click **Allow** in Chrome's prompt.
+3. Ask again.
+
+Even with permission, FormSense only reads a page when you ask a question, and the panel notes every read. To take the permission back: `chrome://extensions` → FormSense → **Details** → **Site access**.
+
+**What it can't read yet:**
+
+- Chrome's own pages, the Chrome Web Store, PDFs and new tabs (no extension can).
+- Fields inside embedded frames (some payment boxes and embedded forms).
+- Fields inside web components' shadow DOM.
+
+**How it handles messy forms:** it uses proper labels when a site has them, and otherwise the nearby text, the placeholder or the heading above a group of options. It recognizes custom dropdowns and checkboxes by their accessibility role, lists fields from your form before others on the page, and skips site search boxes.
 
 ## How it reads the page
 

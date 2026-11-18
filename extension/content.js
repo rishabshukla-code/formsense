@@ -1,9 +1,9 @@
 // FormSense content script. Chrome runs it inside the web page, where it can
-// see the form. It answers one question for the copilot: "what's on this
-// form, and which field is the user on?"
+// see the form. It answers two requests from the side panel: "what's on this
+// form, and which field is the user on?" and "highlight this field".
 //
-// Privacy: it reports labels, help text and choices, plus whether each field
-// is filled in. It never reports what the user typed.
+// Privacy: it reports labels, help text, choices and hints, plus whether each
+// field is filled in. It never reports what the user typed.
 
 (() => {
   // The side panel may inject this file into a tab that already has it.
@@ -12,52 +12,114 @@
 
   const MAX_FIELDS = 40;
   const MAX_TEXT = 300;
+  const NATIVE = "input, select, textarea";
+  // Custom controls that sites build out of divs, recognized by their role.
+  const CUSTOM = '[role=textbox], [role=combobox], [role=listbox], [role=checkbox], [role=radio], [role=switch], [contenteditable=""], [contenteditable=true]';
   const SKIP_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "file", "password"]);
+  // Text inside these never counts as a label (it could be what the user typed).
+  const NOT_LABEL_TEXT = "select, option, textarea, input, script, style, noscript, button, [contenteditable], [aria-hidden=true]";
+
   let lastFocused = null;
   let nextId = 1;
 
-  const clean = (s) => (s || "").replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
+  const clean = (s, max = MAX_TEXT) => (s || "").replace(/\s+/g, " ").trim().slice(0, max);
   const textOfIds = (ids) =>
     clean((ids || "").split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" "));
 
-  const isField = (el) => el?.matches?.("input, select, textarea") && !SKIP_TYPES.has(el.type);
+  function isField(el) {
+    if (!(el instanceof Element)) return false;
+    if (el.matches(NATIVE)) return !SKIP_TYPES.has(el.type) && !el.disabled;
+    // A custom control that wraps a native field is described by that field.
+    return el.matches(CUSTOM) && !el.querySelector(NATIVE) && el.getAttribute("aria-disabled") !== "true";
+  }
   const isVisible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const isRadio = (el) => el.type === "radio" || el.getAttribute("role") === "radio";
+  const isSearch = (el) => el.type === "search" || Boolean(el.closest("[role=search]"));
 
   // Radio buttons with the same name are one question.
   function radioGroup(el) {
-    return [...document.querySelectorAll(`input[type=radio][name="${CSS.escape(el.name)}"]`)];
+    if (el.type === "radio") {
+      return [...document.querySelectorAll(`input[type=radio][name="${CSS.escape(el.name)}"]`)];
+    }
+    const box = el.closest("[role=radiogroup]");
+    return box ? [...box.querySelectorAll("[role=radio]")] : [el];
   }
-  function groupBox(el) {
-    return el.closest("[role=radiogroup]") || el.closest("fieldset");
-  }
+  const groupBox = (el) => el.closest("[role=radiogroup]") || el.closest("fieldset");
 
   function fieldId(el) {
-    const target = el.type === "radio" ? radioGroup(el)[0] : el;
+    const target = isRadio(el) ? radioGroup(el)[0] : el;
     if (!target.dataset.formsenseId) target.dataset.formsenseId = "f" + nextId++;
     return target.dataset.formsenseId;
   }
 
+  // Visible text near a field, for sites that don't use proper <label>s.
+  // Walks up a few levels, stopping before a container that holds other fields.
+  function nearbyText(el) {
+    let node = el;
+    for (let depth = 0; depth < 4 && node.parentElement; depth++) {
+      node = node.parentElement;
+      if (node.matches("form, body, main")) break;
+      const fieldsInside = [...node.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter(isField);
+      if (fieldsInside.length > 1 && !(isRadio(el) && fieldsInside.every(isRadio))) break;
+      const text = visibleText(node);
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function visibleText(root) {
+    const parts = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.parentElement?.closest(NOT_LABEL_TEXT) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    });
+    while (walker.nextNode() && parts.join(" ").length < 200) parts.push(walker.currentNode.textContent);
+    return clean(parts.join(" "), 200);
+  }
+
+  // The question for a radio group with no proper group label: the nearest
+  // text just before the smallest box that holds all of its options.
+  function groupQuestion(el) {
+    const radios = radioGroup(el);
+    let box = radios[0].parentElement;
+    while (box && !radios.every((r) => box.contains(r))) box = box.parentElement;
+    for (let node = box, depth = 0; node && depth < 3; node = node.parentElement, depth++) {
+      let prev = node.previousElementSibling;
+      while (prev && !visibleText(prev)) prev = prev.previousElementSibling;
+      if (!prev) continue;
+      const hasFields = [...prev.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].some(isField);
+      return hasFields ? "" : visibleText(prev);
+    }
+    return "";
+  }
+
   function labelOf(el) {
-    if (el.type === "radio") {
+    if (isRadio(el)) {
       const box = groupBox(el);
       if (box?.getAttribute("aria-labelledby")) return textOfIds(box.getAttribute("aria-labelledby"));
       if (box?.getAttribute("aria-label")) return clean(box.getAttribute("aria-label"));
-      if (box?.matches("fieldset")) return clean(box.querySelector("legend")?.textContent);
+      if (box?.matches("fieldset")) {
+        const legend = clean(box.querySelector("legend")?.textContent);
+        if (legend) return legend;
+      }
+      // An option's own label isn't the question; look for a heading above the group.
+      return groupQuestion(el) || "Choose one";
     }
     if (el.getAttribute("aria-labelledby")) return textOfIds(el.getAttribute("aria-labelledby"));
     if (el.getAttribute("aria-label")) return clean(el.getAttribute("aria-label"));
-    if (el.labels?.length) return clean(el.labels[0].textContent);
-    return clean(el.placeholder || el.title || el.name);
+    if (el.labels?.length) {
+      const text = clean([...el.labels].map((l) => visibleText(l)).join(" "));
+      if (text) return text;
+    }
+    return clean(el.title) || nearbyText(el) || clean(el.placeholder) || clean(el.name) || "(no label)";
   }
 
   function helpOf(el) {
     const ids = el.getAttribute("aria-describedby") ||
-      (el.type === "radio" ? groupBox(el)?.getAttribute("aria-describedby") : "");
+      (isRadio(el) ? groupBox(el)?.getAttribute("aria-describedby") : "");
     return ids ? textOfIds(ids) : "";
   }
 
   function sectionOf(el) {
-    // The nearest fieldset with a legend, skipping a radio group's own box.
     let box = el.closest("fieldset");
     while (box) {
       const legend = box.querySelector(":scope > legend");
@@ -69,58 +131,88 @@
 
   function choicesOf(el) {
     if (el.tagName === "SELECT") {
-      return [...el.options].filter((o) => o.value !== "").map((o) => clean(o.textContent));
+      return [...el.options].filter((o) => o.value !== "").slice(0, 30).map((o) => clean(o.textContent, 80));
     }
-    if (el.type === "radio") return radioGroup(el).map((r) => clean(r.labels?.[0]?.textContent || r.value));
+    if (isRadio(el)) {
+      return radioGroup(el).map((r) => clean(r.labels?.[0]?.textContent || r.getAttribute("aria-label") || r.textContent || r.value, 80));
+    }
     return undefined;
   }
 
   function isFilled(el) {
-    if (el.type === "radio") return radioGroup(el).some((r) => r.checked);
+    if (isRadio(el)) return radioGroup(el).some((r) => r.checked || r.getAttribute("aria-checked") === "true");
     if (el.type === "checkbox") return el.checked;
-    return el.value !== "";
+    const role = el.getAttribute("role");
+    if (role === "checkbox" || role === "switch") return el.getAttribute("aria-checked") === "true";
+    if (el.matches(NATIVE)) return el.value !== "";
+    return clean(el.textContent) !== "";
+  }
+
+  function typeOf(el) {
+    if (isRadio(el)) return "choose one";
+    if (el.tagName === "SELECT") return "dropdown";
+    const role = el.getAttribute("role");
+    if (role === "combobox" || role === "listbox") return "dropdown";
+    if (role) return role;
+    if (el.isContentEditable) return "text";
+    return el.type || el.tagName.toLowerCase();
   }
 
   function describe(el) {
+    const label = labelOf(el);
     const field = {
       id: fieldId(el),
-      label: labelOf(el),
-      type: el.type === "radio" ? "choose one" : el.tagName === "SELECT" ? "dropdown" : el.type || el.tagName.toLowerCase(),
+      label,
+      type: typeOf(el),
       section: sectionOf(el),
-      required: el.required || (el.type === "radio" && radioGroup(el).some((r) => r.required)),
+      required: el.required || el.getAttribute("aria-required") === "true" ||
+        (el.type === "radio" && radioGroup(el).some((r) => r.required)),
       filled: isFilled(el),
     };
     const help = helpOf(el);
     if (help) field.help = help;
+    const hint = clean(el.placeholder, 120);
+    if (hint && hint !== label) field.hint = hint;
     const choices = choicesOf(el);
     if (choices) field.choices = choices;
+    // Only a yes/no flag; the browser's own error text can quote the typed value.
+    if (el.getAttribute("aria-invalid") === "true" || (field.filled && el.validity && !el.validity.valid)) {
+      field.looks_invalid = true;
+    }
     return field;
   }
 
+  function currentField() {
+    if (lastFocused && document.contains(lastFocused)) return lastFocused;
+    const active = document.activeElement;
+    if (isField(active)) return active;
+    const custom = active?.closest?.(CUSTOM);
+    return isField(custom) ? custom : null;
+  }
+
   function getFormContext() {
+    const current = currentField();
+    const currentForm = current?.closest("form");
     const seen = new Set();
-    const fields = [];
-    let total = 0;
-    for (const el of document.querySelectorAll("input, select, textarea")) {
+    const all = [];
+    for (const el of document.querySelectorAll(`${NATIVE}, ${CUSTOM}`)) {
       if (!isField(el) || !isVisible(el)) continue;
-      const key = el.type === "radio" ? "radio:" + el.name : el;
+      if (isSearch(el) && el !== current) continue; // site search boxes aren't the form
+      const key = isRadio(el) ? radioGroup(el)[0] : el;
       if (seen.has(key)) continue;
       seen.add(key);
-      total++;
-      if (fields.length < MAX_FIELDS) fields.push(describe(el));
+      all.push(el);
     }
-    // The field the user last clicked; if we missed the click (e.g. this
-    // script was added later), the field that still has the page's focus.
-    const current = lastFocused && document.contains(lastFocused)
-      ? lastFocused
-      : isField(document.activeElement) ? document.activeElement : null;
-    const focused = current ? describe(current) : null;
+    // Fields from the same form as the user's field come first.
+    if (currentForm) all.sort((a, b) => (b.closest("form") === currentForm) - (a.closest("form") === currentForm));
+    const fields = all.slice(0, MAX_FIELDS).map(describe);
     return {
       page_title: clean(document.title),
       page: location.origin + location.pathname,
-      focused_field: focused,
+      focused_field: current ? describe(current) : null,
       fields,
-      ...(total > fields.length ? { note: `Showing ${fields.length} of ${total} fields.` } : {}),
+      ...(all.length > fields.length ? { note: `Showing ${fields.length} of ${all.length} fields.` } : {}),
+      ...(document.querySelector("iframe") ? { frames_note: "This page has embedded frames; fields inside them can't be read yet." } : {}),
     };
   }
 
@@ -128,7 +220,7 @@
   function highlightField(id) {
     const el = document.querySelector(`[data-formsense-id="${CSS.escape(id || "")}"]`);
     if (!el) return { error: `No field with id "${id}". Call get_form_context for current ids.` };
-    const target = (el.type === "radio" && groupBox(el)) || el;
+    const target = (isRadio(el) && groupBox(el)) || el;
     target.scrollIntoView({ behavior: "smooth", block: "center" });
     const saved = { outline: target.style.outline, outlineOffset: target.style.outlineOffset, borderRadius: target.style.borderRadius };
     Object.assign(target.style, { outline: "3px solid #7f77dd", outlineOffset: "4px", borderRadius: target.style.borderRadius || "6px" });
@@ -144,8 +236,9 @@
   }
 
   document.addEventListener("focusin", (e) => {
-    if (isField(e.target)) lastFocused = e.target;
-  });
+    const el = isField(e.target) ? e.target : e.target?.closest?.(CUSTOM);
+    if (isField(el)) lastFocused = el;
+  }, true);
 
   if (globalThis.chrome?.runtime?.onMessage) {
     // Running inside the extension: answer the side panel.
@@ -162,4 +255,7 @@
       if (result !== undefined) channel.postMessage({ type: "formsense:result", reqId: data.reqId, result });
     };
   }
+
+  // For testing in a page console: __formsenseRead()
+  globalThis.__formsenseRead = getFormContext;
 })();

@@ -50,7 +50,20 @@ function addNote(text) {
 
 // ---- Reading the form on the current tab (asked for by the agent) ----
 
-const NOT_READABLE = "FormSense can't read this page. For now it only works on the practice form at http://localhost:3000/practice.";
+const NOT_READABLE = "FormSense can't read this page.";
+const PROTECTED = "Chrome doesn't let extensions read this kind of page (Chrome's own pages, the Chrome Web Store, PDFs and new tabs). Open the form in a normal web page.";
+const NEEDS_ACCESS = "FormSense doesn't have permission to read websites yet. The user needs to click 'Allow on websites' in the FormSense panel, then ask again.";
+const WEBSITES = { origins: ["https://*/*", "http://*/*"] };
+
+const siteAccessEl = $("site-access");
+$("site-access-btn").addEventListener("click", async () => {
+  // Must run directly from the click: Chrome only shows the prompt for a user action.
+  const granted = await chrome.permissions.request(WEBSITES);
+  if (granted) {
+    siteAccessEl.hidden = true;
+    addNote("FormSense can now read forms on websites");
+  }
+});
 
 // Send a message to content.js in the active tab and return its reply.
 async function askTabInExtension(msg) {
@@ -68,7 +81,12 @@ async function askTabInExtension(msg) {
       return (await ask()) ?? { error: NOT_READABLE };
     } catch (second) {
       console.warn("Can't read this tab:", second.message);
-      return { error: NOT_READABLE };
+      // Work out why: no permission yet, or a page Chrome protects.
+      if (!(await chrome.permissions.contains(WEBSITES))) {
+        siteAccessEl.hidden = false;
+        return { error: NEEDS_ACCESS };
+      }
+      return { error: PROTECTED };
     }
   }
 }
@@ -96,7 +114,7 @@ const askTab = (msg) => (IN_EXTENSION ? askTabInExtension(msg) : askTabInDevPrev
 async function getFormContext() {
   const result = await askTab({ type: "formsense:get_form_context" });
   if (result.error) {
-    addNote("Couldn't read this page");
+    addNote(result.error === NEEDS_ACCESS ? "Needs your OK to read websites" : "Couldn't read this page");
     return JSON.stringify(result);
   }
   // LiveKit RPC replies are limited to 15 KB; drop fields from the end if needed.

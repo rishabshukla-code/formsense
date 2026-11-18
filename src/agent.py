@@ -69,8 +69,12 @@ INSTRUCTIONS = textwrap.dedent(
       to another field since you last looked, so never reuse an earlier
       result. "This" means focused_field, the field they last clicked. If
       focused_field is empty, ask which field they mean.
-    - If get_form_context says it can't read the page, say so in one sentence
-      and offer to help if they read you the field's label.
+    - If get_form_context says FormSense needs permission, tell the user to
+      click "Allow on websites" in the FormSense panel and then ask again.
+    - If it says it can't read the page, say so in one sentence and offer to
+      help if they read you the field's label.
+    - A field's "hint" is the example text shown inside the box. Fields marked
+      looks_invalid have a problem the site flagged; you can't see why.
 
     Explaining a field:
     - Say what the field is asking in plain words, using its label, help text

@@ -38,6 +38,8 @@ button.end { color: var(--danger); }
 .msg.you { align-self: flex-end; background: var(--you); }
 .msg.agent { align-self: flex-start; background: var(--agent); }
 .msg.partial { opacity: .7; }
+.access { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 10px; font-size: 13px; }
+.access p { margin: 0 0 8px; }
 .note { align-self: center; color: var(--muted); font-size: 11px; margin: 0; }
 .empty { color: var(--muted); font-size: 13px; text-align: center; margin: auto; }
 .setup { max-width: 420px; margin: 15vh auto; text-align: center; }
