@@ -1,69 +1,145 @@
 # FormSense
 
-A voice copilot in your browser that explains any form field, out loud, with official sources. Click a field, ask "what is this asking for?", and FormSense tells you.
+**A voice copilot in your browser that explains any form field, out loud, with official sources.**
 
-**Status:** work in progress.
+Click a field, ask "what is this asking for?", and FormSense tells you in plain words. It reads the form you're on, looks up official guidance when a term needs it, and points at the fields you still have to fill in.
 
-- Done: a Chrome side panel you can talk to, and a one-click launcher (`start-web.bat`).
-- Done: the copilot reads the form you're on and explains the field you clicked. It works on a local practice form at `localhost:3000/practice`. See [extension/README.md](extension/README.md).
-- Done: for legal and official terms it looks up guidance with Parallel and names the source. It can point at fields ("where do I put my email?") and tell you which required fields are left.
-- Next: a demo video, and support for real sites.
+> Demo video: coming soon.
 
-### Try asking
+## Why
 
-Click a field on the practice form, then ask:
+Forms like the DS-160 visa application or a driver's license application are full of questions that are hard to read: legal terms, unclear options, help text buried on another site. FormSense sits beside the form and answers questions while you type, so you never have to leave the page to search.
 
-- "What is this asking for?"
-- "What does unlawful detainer mean? Is that the same as being evicted?"
-- "Where do I put my email?"
-- "What do I still need to fill in?"
+## What it can do
 
-Built on the [AssemblyAI + Parallel voice starter](https://github.com/hsingh-aai/assemblyai-parallel-voice-agent). The starter's original README follows.
+| Ask | FormSense |
+|---|---|
+| "What is this asking for?" | Reads the field you clicked and explains it, with an example answer |
+| "What does unlawful detainer mean? Is that the same as being evicted?" | Searches for official guidance and answers, naming the source |
+| "Where do I put my email?" | Scrolls to the field and outlines it |
+| "What do I still need to fill in?" | Lists the required fields that are still empty, and highlights the first one |
 
----
+It explains; it doesn't decide for you, and it never fills in or submits anything.
 
-# AssemblyAI + Parallel voice starter
+## How it works
 
-Talk to a voice agent in your terminal. AssemblyAI handles speech and replies. Parallel’s hosted MCP server gives the agent three tools: Search finds evidence, Fetch reads a particular public page, and Decisions estimates a probability or chooses among supplied options. The first conversation only needs an AssemblyAI key. [Parallel MCP](https://docs.parallel.ai/integrations/mcp/quickstart)
+```mermaid
+flowchart LR
+    subgraph chrome["Chrome"]
+        form["Form page"]
+        cs["content.js<br/>reads and highlights fields"]
+        panel["Side panel<br/>voice chat"]
+        form <--> cs
+        cs <--> panel
+    end
+    subgraph local["Your computer"]
+        token["Token server<br/>web/server.py"]
+        lk["LiveKit server<br/>audio and RPC"]
+        agent["FormSense agent<br/>src/agent.py"]
+        lk <--> agent
+    end
+    subgraph cloud["Cloud"]
+        aai["AssemblyAI<br/>speech to text, LLM gateway, text to speech"]
+        par["Parallel<br/>web search for official guidance"]
+    end
+    panel -->|gets a room pass| token
+    panel <-->|live audio and RPC| lk
+    agent --> aai
+    agent --> par
+```
+
+1. **The side panel** gets a short-lived LiveKit token from the local token server and joins a private room. The token tells LiveKit to send the FormSense agent into the same room.
+2. **Your voice** travels to the agent over LiveKit. AssemblyAI turns it into text and decides when you've finished speaking.
+3. **The LLM** (through AssemblyAI's LLM gateway) chooses a tool:
+   - `get_form_context` reads the form. The agent calls the side panel over LiveKit RPC, and the panel asks `content.js` in the page for the field you clicked, plus every field's label, help text and choices.
+   - `highlight_field` scrolls to a field and outlines it.
+   - Parallel's `web_search` finds official guidance for legal and official terms.
+4. **The reply** is spoken by AssemblyAI's text to speech, and the transcript appears in the panel.
+
+One question, start to finish:
+
+```mermaid
+sequenceDiagram
+    actor U as You
+    participant P as Side panel
+    participant A as Agent
+    participant C as content.js
+    participant W as Parallel
+    U->>A: "What does this question mean?" (voice)
+    A->>P: RPC get_form_context
+    P->>C: read the page
+    C-->>A: focused field "unlawful detainer", help text, choices
+    A->>W: web_search (official guidance)
+    W-->>A: excerpts with sources
+    A-->>U: plain answer, naming the source (voice)
+```
+
+## Privacy and safety
+
+- **No typed values:** `content.js` reports each field's label, help text, choices, and whether it's filled in. It never sends what you typed. Password and file fields are skipped.
+- **Visible:** the panel shows a note every time the page is read or a field is highlighted.
+- **Read-only:** FormSense can't fill in or submit forms.
+- **Local first:** the LiveKit server and token server run on your computer. Only audio and text go to AssemblyAI, and search queries go to Parallel.
+- **Limited reach:** for now the extension only runs on the local practice form (`localhost:3000`).
+- **Not legal advice:** FormSense gives general information and names its sources.
 
 ## Run it
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then open a terminal:
+**You need:** Windows, macOS or Linux; Python 3.10 to 3.13; [uv](https://docs.astral.sh/uv/getting-started/installation/); Chrome; an [AssemblyAI key](https://www.assemblyai.com/dashboard); and optionally a [Parallel key](https://platform.parallel.ai) (without one, web search uses a free, rate-limited tier).
 
-```sh
-git clone https://github.com/hsingh-aai/assemblyai-parallel-voice-agent.git
-cd assemblyai-parallel-voice-agent
-uv sync --frozen
-```
+1. Install dependencies:
 
-Copy `.env.example` to `.env.local`. Set `ASSEMBLYAI_API_KEY` with your [AssemblyAI key](https://www.assemblyai.com/dashboard). Leave `PARALLEL_API_KEY` empty for free, rate-limited MCP access.
+   ```sh
+   git clone https://github.com/rishabshukla-code/formsense.git
+   cd formsense
+   uv sync --frozen
+   ```
 
-```sh
-uv run python src/agent.py console --log-level info
-```
+2. Copy `.env.example` to `.env.local` and add your keys.
 
-Allow microphone access and wait for the greeting. To type instead, add `--text` to the command. Press Ctrl+C to quit.
+3. Get the LiveKit server: download `livekit-server` for your system from [LiveKit releases](https://github.com/livekit/livekit/releases) (tested with v1.13.11). Put it in `tools/livekit/`, or anywhere on your PATH.
 
-### Hit the free-tier rate limit?
+4. Start everything: double-click `start-web.bat` on Windows, or run:
 
-1. Press Ctrl+C to stop the agent. Get a key from the [Parallel dashboard](https://platform.parallel.ai).
-2. Open the existing `.env.local` in the repo folder. Find `PARALLEL_API_KEY=`, paste your key after the equals sign, and save the file.
-3. Run the same console command again and repeat your question. On startup, the agent picks up your key and uses your Parallel account for Search, Fetch, and Decisions. No code changes are needed.
+   ```sh
+   uv run python web/run.py
+   ```
 
-## Try the three tools
+   This starts the LiveKit server, the agent and the token server. It opens the browser once the agent is ready.
 
-1. **Search:** “What changed in the latest stable Python release?” The agent can answer directly from search excerpts.
-2. **Fetch:** “Read the release notes you just cited. What do they say about upgrading?” The follow-up identifies a specific page. You can also paste a public URL in text mode.
-3. **Decisions:** “How likely is it that Python 3.13 offers a free-threaded build? Give me a probability.” Decisions gathers its own evidence and estimates how likely the claim is to be true.
+5. Load the extension: open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose the `extension` folder. Pin **FormSense** from the puzzle-piece menu.
 
-Watch the tool names in the terminal. The agent chooses when to call each one. Fetch is for a specific page or a missing detail, so a search that already answers the question needs only one call.
+6. Open the practice form at http://localhost:3000/practice, click the FormSense icon, then click **Start talking**. The first time, the panel will ask you to allow the microphone.
 
-## Make it yours
+More detail, and how to test without loading the extension: [extension/README.md](extension/README.md).
 
-Both Search and Decisions are already connected. Start with a pair of questions about the same subject. “Does Python 3.13 support free threading?” is a factual lookup. “Classify that support as stable, experimental, or explicitly unsupported” asks for a decision against supplied options. [See the prompt and tool input for this example](docs/decision-prompts.md).
+**Microphone not working?** If the green level bar in the panel doesn't move when you talk, Chrome is probably using the wrong microphone. Pick your real one at `chrome://settings/content/microphone`.
 
-Try a library compatibility assistant. Set `AGENT_GREETING="Which library are you working with?"` in `.env.local`. Add “Prefer official release notes and package metadata” to `INSTRUCTIONS` in [src/agent.py](src/agent.py). Restart and try similar questions about a library you use.
+## Project layout
 
-**Standalone API example.** To call Parallel directly from your own app, set `PARALLEL_API_KEY` with a [Parallel key](https://platform.parallel.ai). [parallel_api.py](src/parallel_api.py) has the two API calls and only needs `parallel-web`. [try_parallel.py](scripts/try_parallel.py) shows how to use them.
+| Path | What it is |
+|---|---|
+| `src/agent.py` | The FormSense agent: instructions, `get_form_context` and `highlight_field` tools, Parallel web tools, voice pipeline |
+| `extension/` | Chrome extension: side panel (`sidepanel.js`), page reader (`content.js`), microphone setup |
+| `web/server.py` | Token server; also serves the practice form |
+| `web/run.py`, `start-web.bat` | One-command launcher |
+| `web/static/practice.html` | Practice form (a made-up rental application) |
+| `tests/` | Unit and live tests (`uv run pytest -q`) |
 
-[Setup help](docs/advanced.md#troubleshooting) · [Browser and deployment options](docs/advanced.md#browser-or-room)
+## Built with
+
+[LiveKit Agents](https://docs.livekit.io/agents/) · [AssemblyAI](https://www.assemblyai.com/) streaming speech to text, LLM gateway and text to speech · [Parallel](https://parallel.ai/) web tools over MCP · Chrome extension (Manifest V3, side panel, content script) · LiveKit RPC between the agent and the browser
+
+## Roadmap
+
+- [x] Voice chat in a Chrome side panel
+- [x] Read the form and explain the clicked field
+- [x] Official sources for legal and official terms
+- [x] Highlight fields, and list what's left
+- [ ] Demo video
+- [ ] Real websites beyond the practice form, starting with simple public forms
+- [ ] Optional "fill this in for me", always with confirmation, never submitting
+
+## Credits
+
+Built on the [AssemblyAI + Parallel voice starter](https://github.com/hsingh-aai/assemblyai-parallel-voice-agent). Its original guide to the terminal mode and the three Parallel tools is in [docs/starter.md](docs/starter.md).
