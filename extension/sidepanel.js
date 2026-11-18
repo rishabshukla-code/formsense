@@ -55,11 +55,20 @@ const NOT_READABLE = "FormSense can't read this page. For now it only works on t
 async function readFormInExtension() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab) return { error: "No browser tab is open." };
+  const ask = () => chrome.tabs.sendMessage(tab.id, { type: "formsense:get_form_context" });
   try {
-    const result = await chrome.tabs.sendMessage(tab.id, { type: "formsense:get_form_context" });
-    return result ?? { error: NOT_READABLE };
-  } catch {
-    return { error: NOT_READABLE };
+    return (await ask()) ?? { error: NOT_READABLE };
+  } catch (first) {
+    // Chrome only adds content.js to pages loaded after the extension was
+    // installed or reloaded. If this tab was already open, add it now.
+    console.info("content.js not in this tab yet, injecting:", first.message);
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      return (await ask()) ?? { error: NOT_READABLE };
+    } catch (second) {
+      console.warn("Can't read this tab:", second.message);
+      return { error: NOT_READABLE };
+    }
   }
 }
 

@@ -6,6 +6,10 @@
 // is filled in. It never reports what the user typed.
 
 (() => {
+  // The side panel may inject this file into a tab that already has it.
+  if (globalThis.__formsenseLoaded) return;
+  globalThis.__formsenseLoaded = true;
+
   const MAX_FIELDS = 40;
   const MAX_TEXT = 300;
   const SKIP_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "file", "password"]);
@@ -105,7 +109,12 @@
       total++;
       if (fields.length < MAX_FIELDS) fields.push(describe(el));
     }
-    const focused = lastFocused && document.contains(lastFocused) ? describe(lastFocused) : null;
+    // The field the user last clicked; if we missed the click (e.g. this
+    // script was added later), the field that still has the page's focus.
+    const current = lastFocused && document.contains(lastFocused)
+      ? lastFocused
+      : isField(document.activeElement) ? document.activeElement : null;
+    const focused = current ? describe(current) : null;
     return {
       page_title: clean(document.title),
       page: location.origin + location.pathname,

@@ -3,7 +3,7 @@
   "name": "FormSense",
   "version": "0.2.0",
   "description": "A voice copilot that explains the form you're filling in.",
-  "permissions": ["sidePanel"],
+  "permissions": ["sidePanel", "scripting"],
   "host_permissions": ["http://localhost:3000/*"],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "sidepanel.html" },
