@@ -33,6 +33,19 @@
     return el.matches(CUSTOM) && !el.querySelector(NATIVE) && el.getAttribute("aria-disabled") !== "true";
   }
   const isVisible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+
+  // Many sites hide the real checkbox or radio and draw their own box around
+  // it. Then the drawn box (the nearest visible ancestor holding only this
+  // field) stands in for it: for visibility, clicks and highlighting.
+  function standIn(el) {
+    if (isVisible(el) || !(el.type === "checkbox" || el.type === "radio")) return el;
+    for (let node = el.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+      if ([...node.querySelectorAll(NATIVE)].filter((f) => f !== el && isField(f)).length) break;
+      if (isVisible(node)) return node;
+    }
+    return el;
+  }
+  const isShown = (el) => isVisible(standIn(el));
   const isRadio = (el) => el.type === "radio" || el.getAttribute("role") === "radio";
   const isSearch = (el) => el.type === "search" || Boolean(el.closest("[role=search]"));
 
@@ -95,7 +108,7 @@
   // Some sites point <label for> at the question's wrapper box instead of the
   // field, so the browser never links them. Follow it from the field upward.
   function containerLabel(el) {
-    for (let node = el.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+    for (let node = el.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
       if (node.matches("form, body")) break;
       if (!node.id) continue;
       const label = document.querySelector(`label[for="${CSS.escape(node.id)}"]`);
@@ -110,9 +123,13 @@
     const own = el.labels?.length ? visibleText(el.labels[0]) : "";
     if (own) return own;
     if (el.getAttribute("aria-label")) return clean(el.getAttribute("aria-label"));
-    const box = el.parentElement;
-    const alone = box && [...box.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter(isField).length === 1;
-    return (alone && visibleText(box)) || clean(el.textContent, 80) || clean(el.value, 80);
+    // The text in the smallest box around this option that holds no other field.
+    for (let node = el.parentElement, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+      if ([...node.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter(isField).length > 1) break;
+      const text = visibleText(node);
+      if (text) return clean(text, 80);
+    }
+    return clean(el.textContent, 80) || clean(el.value, 80);
   }
 
   function labelOf(el) {
@@ -219,9 +236,7 @@
   function currentField() {
     if (lastFocused && document.contains(lastFocused)) return lastFocused;
     const active = document.activeElement;
-    if (isField(active)) return active;
-    const custom = active?.closest?.(CUSTOM);
-    return isField(custom) ? custom : null;
+    return active && active !== document.body ? fieldNear(active) : null;
   }
 
   // A frame big enough to hold a form (not a hidden tracking or chat frame).
@@ -234,7 +249,7 @@
     const seen = new Set();
     const all = [];
     for (const el of document.querySelectorAll(`${NATIVE}, ${CUSTOM}`)) {
-      if (!isField(el) || !isVisible(el)) continue;
+      if (!isField(el) || !isShown(el)) continue;
       if (isSearch(el) && el !== current) continue; // site search boxes aren't the form
       const key = isRadio(el) ? radioGroup(el)[0] : el;
       if (seen.has(key)) continue;
@@ -258,7 +273,7 @@
   function highlightField(id) {
     const el = document.querySelector(`[data-formsense-id="${CSS.escape(id || "")}"]`);
     if (!el) return { error: `No field with id "${id}". Call get_form_context for current ids.` };
-    const target = (isRadio(el) && groupBox(el)) || el;
+    const target = (isRadio(el) && groupBox(el)) || standIn(el);
     target.scrollIntoView({ behavior: "smooth", block: "center" });
     const saved = { outline: target.style.outline, outlineOffset: target.style.outlineOffset, borderRadius: target.style.borderRadius };
     Object.assign(target.style, { outline: "3px solid #7f77dd", outlineOffset: "4px", borderRadius: target.style.borderRadius || "6px" });
@@ -285,7 +300,7 @@
     if (isField(control)) return control;
     for (let node = target, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
       if (node.matches("form, body, main")) break;
-      const inside = [...node.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter((f) => isField(f) && isVisible(f));
+      const inside = [...node.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter((f) => isField(f) && isShown(f));
       if (inside.length === 1) return inside[0];
       if (inside.length > 1) {
         const oneGroup = inside.every(isRadio) && new Set(inside.map((f) => radioGroup(f)[0])).size === 1;
@@ -295,9 +310,10 @@
     return null;
   }
 
+  // Focus counts too: tabbing to a field, or to a site's drawn checkbox.
   document.addEventListener("focusin", (e) => {
-    const el = isField(e.target) ? e.target : e.target?.closest?.(CUSTOM);
-    if (isField(el)) lastFocused = el;
+    const el = fieldNear(e.target);
+    if (el) lastFocused = el;
   }, true);
   document.addEventListener("pointerdown", (e) => {
     const el = fieldNear(e.target);
