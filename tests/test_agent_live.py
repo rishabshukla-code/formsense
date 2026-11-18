@@ -31,7 +31,7 @@ async def test_voice_tools_in_one_conversation():
         ),
     ]
     async with AgentSession() as session:
-        await session.start(agent.SearchAssistant())
+        await session.start(agent.FormSenseAgent())
         greeting = await session.run(user_input="Hi there, how are you?")
         assert all(event.type != "function_call" for event in greeting.events)
         for question, tool in turns:

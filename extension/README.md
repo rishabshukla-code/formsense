@@ -30,6 +30,8 @@ For now FormSense only reads the practice form. It will work on other sites late
 4. `content.js` replies with the page title, the field you last clicked, and each field's label, section, help text and choices.
 5. The panel shows a small "Read the form" note, so you always see when the page was read.
 
+Highlighting works the same way: the agent's `highlight_field` tool sends a field id (like `f5`) over RPC, and `content.js` scrolls to that field and outlines it in purple for 4 seconds. The panel notes "Highlighted …".
+
 **Privacy:** `content.js` reports whether a field is filled in, never what you typed. Password and file fields are skipped.
 
 ## Files

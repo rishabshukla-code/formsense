@@ -124,6 +124,25 @@
     };
   }
 
+  // Scroll to a field and outline it for a few seconds, without moving focus.
+  function highlightField(id) {
+    const el = document.querySelector(`[data-formsense-id="${CSS.escape(id || "")}"]`);
+    if (!el) return { error: `No field with id "${id}". Call get_form_context for current ids.` };
+    const target = (el.type === "radio" && groupBox(el)) || el;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    const saved = { outline: target.style.outline, outlineOffset: target.style.outlineOffset, borderRadius: target.style.borderRadius };
+    Object.assign(target.style, { outline: "3px solid #7f77dd", outlineOffset: "4px", borderRadius: target.style.borderRadius || "6px" });
+    clearTimeout(target.__formsenseTimer);
+    target.__formsenseTimer = setTimeout(() => Object.assign(target.style, saved), 4000);
+    return { ok: true, highlighted: labelOf(el) };
+  }
+
+  function handle(msg) {
+    if (msg?.type === "formsense:get_form_context") return getFormContext();
+    if (msg?.type === "formsense:highlight_field") return highlightField(msg.id);
+    return undefined;
+  }
+
   document.addEventListener("focusin", (e) => {
     if (isField(e.target)) lastFocused = e.target;
   });
@@ -131,16 +150,16 @@
   if (globalThis.chrome?.runtime?.onMessage) {
     // Running inside the extension: answer the side panel.
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (msg?.type === "formsense:get_form_context") sendResponse(getFormContext());
+      const result = handle(msg);
+      if (result !== undefined) sendResponse(result);
     });
   } else {
     // Development only: injected as a normal page script, answer a side panel
     // preview open in another tab of the same site.
     const channel = new BroadcastChannel("formsense-dev");
     channel.onmessage = ({ data }) => {
-      if (data?.type === "formsense:get_form_context") {
-        channel.postMessage({ type: "formsense:result", reqId: data.reqId, result: getFormContext() });
-      }
+      const result = handle(data);
+      if (result !== undefined) channel.postMessage({ type: "formsense:result", reqId: data.reqId, result });
     };
   }
 })();

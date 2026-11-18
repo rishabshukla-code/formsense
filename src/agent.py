@@ -1,4 +1,8 @@
-"""Voice agent with AssemblyAI speech and Parallel web tools."""
+"""FormSense: a voice copilot that explains the form you're filling in.
+
+AssemblyAI handles speech, Parallel's web tools find official guidance, and
+the FormSense browser extension lets the agent read and highlight the form.
+"""
 
 from __future__ import annotations
 
@@ -40,16 +44,18 @@ TTS_VOICE = os.environ.get("ASSEMBLYAI_TTS_VOICE", "aai-kyla")
 LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1"
 
 # Names callers are likely to say; boosts recognition accuracy.
-KEYTERMS = ["Parallel", "LiveKit", "AssemblyAI"]
+KEYTERMS = ["FormSense", "Parallel", "LiveKit", "AssemblyAI"]
 
 GREETING = os.environ.get(
-    "AGENT_GREETING", "Hi! I can look anything up on the web for you. What's up?"
+    "AGENT_GREETING",
+    "Hi, I'm FormSense. Click any field on your form and ask me what it means.",
 )
 
 INSTRUCTIONS = textwrap.dedent(
     """\
-    You are a friendly voice assistant that can search the live web. Today is
-    {today}.
+    You are FormSense, a calm, friendly voice copilot that helps people
+    understand the web form they are filling in, such as a rental, visa or
+    license application. You can also search the live web. Today is {today}.
 
     How you speak:
     - Plain text only; everything you say is read aloud. No markdown, lists,
@@ -57,19 +63,43 @@ INSTRUCTIONS = textwrap.dedent(
     - Keep replies to one to three short sentences. Ask one question at a time.
     - Spell out numbers, dates, phone numbers and email addresses naturally.
 
-    Helping with forms:
-    - The user may be filling in a web form in their browser. When they ask
-      about a form, a field, "this", "here" or "this question", call
-      get_form_context first, every time: they may have moved to another
-      field since you last looked, so never reuse an earlier result. "This"
-      means focused_field, the field they last clicked. If focused_field is
-      empty, ask which field they mean.
-    - Explain what the field is asking in plain words, using its label, help
-      text and choices, and give one short example of a good answer.
+    Reading the form:
+    - When the user asks about a form, a field, "this", "here" or "this
+      question", call get_form_context first, every time: they may have moved
+      to another field since you last looked, so never reuse an earlier
+      result. "This" means focused_field, the field they last clicked. If
+      focused_field is empty, ask which field they mean.
+    - If get_form_context says it can't read the page, say so in one sentence
+      and offer to help if they read you the field's label.
+
+    Explaining a field:
+    - Say what the field is asking in plain words, using its label, help text
+      and choices, then give one short example of a good answer.
+    - When the answer depends on official rules or a term of art (legal,
+      immigration, tax, government ID, credit or tenancy terms), and the
+      form's own help text doesn't settle it, use web_search to find official
+      guidance first: government sites, the organization that owns the form,
+      or a recognized authority. Name the source when you answer ("according
+      to the State Department"). If sources disagree or you can't verify it,
+      say so and suggest checking with the organization.
+    - For a plain field like a name, email or date, answer directly; don't
+      search.
+    - You explain; you don't decide for them. For yes or no questions about
+      their own history or eligibility, explain what each answer means and
+      let them choose. This is general information, not legal advice.
+
+    Pointing at fields:
+    - Use highlight_field with a field's id when you talk about a field other
+      than the one they're on, or when they ask where something is. Don't
+      highlight the field they already clicked.
+    - When they ask what's left, list required fields that aren't filled in,
+      by label, at most three at a time, and highlight the first one.
+
+    Privacy:
     - You can't see what the user typed, only whether a field is filled in.
-      Never ask them to read out personal details such as ID numbers.
+      Never ask them to read out personal details such as ID, passport or
+      Social Security numbers, and don't repeat any they volunteer.
     - You can't fill in or submit the form yourself.
-    - If get_form_context says it can't read the page, tell the user briefly.
 
     How you use the web:
     - Answer greetings, arithmetic, stable common knowledge, and questions already
@@ -113,7 +143,7 @@ def build_llm() -> llm.LLM:
     )
 
 
-class SearchAssistant(Agent):
+class FormSenseAgent(Agent):
     def __init__(self) -> None:
         key = os.getenv("PARALLEL_API_KEY")
         self.parallel = mcp.MCPToolset(
@@ -133,27 +163,20 @@ class SearchAssistant(Agent):
             tools=[self.parallel],
         )
 
-    @function_tool
-    async def get_form_context(self, context: RunContext) -> str:
-        """Read the form on the user's current browser tab.
-
-        Returns JSON: the page title, the field the user last clicked
-        (focused_field), and every field's label, section, help text, choices,
-        whether it is required and whether it is filled in. It never includes
-        what the user typed.
-        """
+    async def _call_page(self, context: RunContext, method: str, payload: str = "") -> str:
+        """Call a method on the user's FormSense side panel over LiveKit RPC."""
         try:
             room_io = context.session.room_io
         except RuntimeError:  # console mode: no browser in the loop
-            return "The user is talking from the terminal, so there is no page to read."
+            return "The user is talking from the terminal, so there is no page to use."
         user = room_io.linked_participant
         if user is None:
-            return "No user is connected, so there is no page to read."
+            return "No user is connected, so there is no page to use."
         try:
             return await room_io.room.local_participant.perform_rpc(
                 destination_identity=user.identity,
-                method="get_form_context",
-                payload="",
+                method=method,
+                payload=payload,
                 response_timeout=5.0,
             )
         except rtc.RpcError as err:
@@ -162,8 +185,28 @@ class SearchAssistant(Agent):
                     "The user isn't using the FormSense browser extension, "
                     "so you can't see their page."
                 )
-            logger.warning("get_form_context failed: %s", err.message)
-            return "Couldn't read the page right now."
+            logger.warning("%s failed: %s", method, err.message)
+            return "Couldn't reach the page right now."
+
+    @function_tool
+    async def get_form_context(self, context: RunContext) -> str:
+        """Read the form on the user's current browser tab.
+
+        Returns JSON: the page title, the field the user last clicked
+        (focused_field), and every field's id, label, section, help text,
+        choices, whether it is required and whether it is filled in. It never
+        includes what the user typed.
+        """
+        return await self._call_page(context, "get_form_context")
+
+    @function_tool
+    async def highlight_field(self, context: RunContext, field_id: str) -> str:
+        """Scroll to a field on the user's page and outline it for a few seconds.
+
+        Args:
+            field_id: The field's id from get_form_context, like "f3".
+        """
+        return await self._call_page(context, "highlight_field", field_id)
 
     async def on_enter(self) -> None:
         if not self.parallel.tools:
@@ -177,7 +220,7 @@ class SearchAssistant(Agent):
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="parallel-search-agent")
+@server.rtc_session(agent_name="formsense")
 async def entrypoint(ctx: JobContext) -> None:
     session = AgentSession(
         # AssemblyAI streaming STT also decides when the caller finished speaking.
@@ -204,7 +247,7 @@ async def entrypoint(ctx: JobContext) -> None:
             if isinstance(event.item, llm.ChatMessage) and event.item.text_content:
                 logger.info("%s · %s", event.item.role.upper(), event.item.text_content)
 
-    await session.start(agent=SearchAssistant(), room=ctx.room)
+    await session.start(agent=FormSenseAgent(), room=ctx.room)
     await ctx.connect()
 
 

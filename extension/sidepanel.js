@@ -52,10 +52,11 @@ function addNote(text) {
 
 const NOT_READABLE = "FormSense can't read this page. For now it only works on the practice form at http://localhost:3000/practice.";
 
-async function readFormInExtension() {
+// Send a message to content.js in the active tab and return its reply.
+async function askTabInExtension(msg) {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab) return { error: "No browser tab is open." };
-  const ask = () => chrome.tabs.sendMessage(tab.id, { type: "formsense:get_form_context" });
+  const ask = () => chrome.tabs.sendMessage(tab.id, msg);
   try {
     return (await ask()) ?? { error: NOT_READABLE };
   } catch (first) {
@@ -74,7 +75,7 @@ async function readFormInExtension() {
 
 // Development only: when this panel is opened as a normal page, ask a practice
 // form tab of the same site (with content.js injected) over BroadcastChannel.
-function readFormInDevPreview() {
+function askTabInDevPreview(msg) {
   return new Promise((resolve) => {
     const channel = new BroadcastChannel("formsense-dev");
     const reqId = crypto.randomUUID();
@@ -85,12 +86,15 @@ function readFormInDevPreview() {
       channel.close();
       resolve(data.result);
     };
-    channel.postMessage({ type: "formsense:get_form_context", reqId });
+    channel.postMessage({ ...msg, reqId });
   });
 }
 
+const askTab = (msg) => (IN_EXTENSION ? askTabInExtension(msg) : askTabInDevPreview(msg));
+
+// RPC from the agent: read the form.
 async function getFormContext() {
-  const result = IN_EXTENSION ? await readFormInExtension() : await readFormInDevPreview();
+  const result = await askTab({ type: "formsense:get_form_context" });
   if (result.error) {
     addNote("Couldn't read this page");
     return JSON.stringify(result);
@@ -105,6 +109,13 @@ async function getFormContext() {
   const where = result.focused_field ? `, you're on "${result.focused_field.label}"` : "";
   addNote(`Read the form (${result.fields.length} fields${where})`);
   return json;
+}
+
+// RPC from the agent: point at a field.
+async function highlightField(fieldId) {
+  const result = await askTab({ type: "formsense:highlight_field", id: fieldId.trim() });
+  if (result.ok) addNote(`Highlighted "${result.highlighted}"`);
+  return JSON.stringify(result);
 }
 
 // Mic level bar: shows whether the panel is actually capturing your voice.
@@ -192,6 +203,7 @@ async function start() {
 
     room = new Room({ adaptiveStream: true, dynacast: true });
     room.localParticipant.registerRpcMethod("get_form_context", () => getFormContext());
+    room.localParticipant.registerRpcMethod("highlight_field", ({ payload }) => highlightField(payload));
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === Track.Kind.Audio) document.body.appendChild(track.attach());

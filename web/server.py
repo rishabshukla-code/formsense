@@ -1,7 +1,7 @@
 """Serve the browser client and hand out LiveKit tokens that dispatch the agent.
 
 Each visit gets its own room. The token tells LiveKit to dispatch the agent
-(AGENT_NAME, default "parallel-search-agent") into that room as soon as the
+(AGENT_NAME, default "formsense") into that room as soon as the
 browser joins, so no `lk dispatch` command is needed.
 """
 
@@ -21,7 +21,7 @@ load_dotenv(ROOT / ".env.local")
 LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "ws://127.0.0.1:7880")
 LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "devkey")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "secret")
-AGENT_NAME = os.environ.get("AGENT_NAME", "parallel-search-agent")
+AGENT_NAME = os.environ.get("AGENT_NAME", "formsense")
 PORT = int(os.environ.get("WEB_PORT", "3000"))
 STATIC = Path(__file__).resolve().parent / "static"
 

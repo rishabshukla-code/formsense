@@ -6,7 +6,17 @@ A voice copilot in your browser that explains any form field, out loud, with off
 
 - Done: a Chrome side panel you can talk to, and a one-click launcher (`start-web.bat`).
 - Done: the copilot reads the form you're on and explains the field you clicked. It works on a local practice form at `localhost:3000/practice`. See [extension/README.md](extension/README.md).
-- Next: official sources for answers, and highlighting fields on the page.
+- Done: for legal and official terms it looks up guidance with Parallel and names the source. It can point at fields ("where do I put my email?") and tell you which required fields are left.
+- Next: a demo video, and support for real sites.
+
+### Try asking
+
+Click a field on the practice form, then ask:
+
+- "What is this asking for?"
+- "What does unlawful detainer mean? Is that the same as being evicted?"
+- "Where do I put my email?"
+- "What do I still need to fill in?"
 
 Built on the [AssemblyAI + Parallel voice starter](https://github.com/hsingh-aai/assemblyai-parallel-voice-agent). The starter's original README follows.
 

@@ -29,7 +29,7 @@ uv run python src/agent.py dev
 ```
 
 ```bash
-lk dispatch create --room test --agent-name parallel-search-agent
+lk dispatch create --room test --agent-name formsense
 ```
 
 Then join room `test` from the [Agents Playground](https://agents-playground.livekit.io/)
