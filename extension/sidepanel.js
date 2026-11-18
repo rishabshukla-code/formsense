@@ -110,6 +110,23 @@ function askTabInDevPreview(msg) {
 
 const askTab = (msg) => (IN_EXTENSION ? askTabInExtension(msg) : askTabInDevPreview(msg));
 
+// While a conversation is running, add the reader to the tab you're on as
+// soon as you switch to it or it loads, so it can notice which field you
+// click before your first question. It sends nothing until the agent asks.
+async function prepareActiveTab() {
+  if (!IN_EXTENSION || !room) return;
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab) return;
+  // Fails quietly on pages FormSense may not read yet; asking explains why.
+  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }).catch(() => {});
+}
+if (IN_EXTENSION) {
+  chrome.tabs.onActivated.addListener(() => prepareActiveTab());
+  chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+    if (change.status === "complete" && tab.active) prepareActiveTab();
+  });
+}
+
 // RPC from the agent: read the form.
 async function getFormContext() {
   const result = await askTab({ type: "formsense:get_form_context" });
@@ -253,6 +270,7 @@ async function start() {
     });
 
     await room.connect(url, token);
+    prepareActiveTab();
     await room.startAudio();
     setStatus("Waiting for copilot…");
     agentTimer = setTimeout(() => {

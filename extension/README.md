@@ -28,7 +28,7 @@ FormSense reads the practice form out of the box. For other sites it needs your 
 2. The panel shows **Allow on websites**. Click it, then click **Allow** in Chrome's prompt.
 3. Ask again.
 
-Even with permission, FormSense only reads a page when you ask a question, and the panel notes every read. To take the permission back: `chrome://extensions` → FormSense → **Details** → **Site access**.
+Even with permission, FormSense only sends anything from a page when you ask a question, and the panel notes every read. While a conversation is running, it adds its reader to the tab you're on so it can notice which question you click; it never runs when you're not in a conversation. To take the permission back: `chrome://extensions` → FormSense → **Details** → **Site access**.
 
 **What it can't read yet:**
 
@@ -36,7 +36,7 @@ Even with permission, FormSense only reads a page when you ask a question, and t
 - Fields inside embedded frames (some payment boxes and embedded forms).
 - Fields inside web components' shadow DOM.
 
-**How it handles messy forms:** it uses proper labels when a site has them, and otherwise the nearby text, the placeholder or the heading above a group of options. It recognizes custom dropdowns and checkboxes by their accessibility role, lists fields from your form before others on the page, and skips site search boxes.
+**How it handles messy forms:** it uses proper labels when a site has them, and otherwise a label pointed at the question's box, the nearby text, the placeholder or the heading above a group of options. It knows you're on a question when you click its text or one of its options, not just the box itself. It recognizes custom dropdowns and checkboxes by their accessibility role, lists fields from your form before others on the page, and skips site search boxes.
 
 ## How it reads the page
 

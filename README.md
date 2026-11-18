@@ -80,7 +80,7 @@ sequenceDiagram
 - **Visible:** the panel shows a note every time the page is read or a field is highlighted.
 - **Read-only:** FormSense can't fill in or submit forms.
 - **Local first:** the LiveKit server and token server run on your computer. Only audio and text go to AssemblyAI, and search queries go to Parallel.
-- **Asks first:** it reads the practice form out of the box. On other websites it asks for your OK once, and even then it only reads a page when you ask a question.
+- **Asks first:** it reads the practice form out of the box. On other websites it asks for your OK once, and even then it only sends anything from a page when you ask a question. It's only active on your current tab while a conversation is running.
 - **Not legal advice:** FormSense gives general information and names its sources.
 
 ## Run it

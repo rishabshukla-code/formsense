@@ -92,6 +92,29 @@
     return "";
   }
 
+  // Some sites point <label for> at the question's wrapper box instead of the
+  // field, so the browser never links them. Follow it from the field upward.
+  function containerLabel(el) {
+    for (let node = el.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+      if (node.matches("form, body")) break;
+      if (!node.id) continue;
+      const label = document.querySelector(`label[for="${CSS.escape(node.id)}"]`);
+      const text = label ? visibleText(label) : "";
+      if (text) return text;
+    }
+    return "";
+  }
+
+  // The text of one option (radio or checkbox), even when its label isn't linked.
+  function optionText(el) {
+    const own = el.labels?.length ? visibleText(el.labels[0]) : "";
+    if (own) return own;
+    if (el.getAttribute("aria-label")) return clean(el.getAttribute("aria-label"));
+    const box = el.parentElement;
+    const alone = box && [...box.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter(isField).length === 1;
+    return (alone && visibleText(box)) || clean(el.textContent, 80) || clean(el.value, 80);
+  }
+
   function labelOf(el) {
     if (isRadio(el)) {
       const box = groupBox(el);
@@ -101,16 +124,24 @@
         const legend = clean(box.querySelector("legend")?.textContent);
         if (legend) return legend;
       }
-      // An option's own label isn't the question; look for a heading above the group.
-      return groupQuestion(el) || "Choose one";
+      // An option's own label isn't the question; look for the question's label
+      // or a heading above the group.
+      return containerLabel(el) || groupQuestion(el) || "Choose one";
     }
     if (el.getAttribute("aria-labelledby")) return textOfIds(el.getAttribute("aria-labelledby"));
+    if (el.type === "checkbox" || el.getAttribute("role") === "checkbox") {
+      // One box in a list ("Do you get any of these?"): give the question and the option.
+      const option = el.getAttribute("aria-label") ? clean(el.getAttribute("aria-label")) : optionText(el);
+      const question = containerLabel(el);
+      if (question && option && question !== option) return `${question}: ${option}`;
+      if (option) return option;
+    }
     if (el.getAttribute("aria-label")) return clean(el.getAttribute("aria-label"));
     if (el.labels?.length) {
       const text = clean([...el.labels].map((l) => visibleText(l)).join(" "));
       if (text) return text;
     }
-    return clean(el.title) || nearbyText(el) || clean(el.placeholder) || clean(el.name) || "(no label)";
+    return clean(el.title) || containerLabel(el) || nearbyText(el) || clean(el.placeholder) || clean(el.name) || "(no label)";
   }
 
   function helpOf(el) {
@@ -131,11 +162,14 @@
 
   function choicesOf(el) {
     if (el.tagName === "SELECT") {
-      return [...el.options].filter((o) => o.value !== "").slice(0, 30).map((o) => clean(o.textContent, 80));
+      return [...el.options]
+        .filter((o, i) => o.value !== "" && !o.disabled &&
+          // A first option like "Please select" is a placeholder, not a choice.
+          !(i === 0 && /^[-\s]*(please\s+)?(select|choose)\b/i.test(o.textContent.trim())))
+        .slice(0, 30)
+        .map((o) => clean(o.textContent, 80));
     }
-    if (isRadio(el)) {
-      return radioGroup(el).map((r) => clean(r.labels?.[0]?.textContent || r.getAttribute("aria-label") || r.textContent || r.value, 80));
-    }
+    if (isRadio(el)) return radioGroup(el).map(optionText);
     return undefined;
   }
 
@@ -190,6 +224,10 @@
     return isField(custom) ? custom : null;
   }
 
+  // A frame big enough to hold a form (not a hidden tracking or chat frame).
+  const hasVisibleFrame = () =>
+    [...document.querySelectorAll("iframe")].some((f) => f.offsetWidth > 150 && f.offsetHeight > 80);
+
   function getFormContext() {
     const current = currentField();
     const currentForm = current?.closest("form");
@@ -212,7 +250,7 @@
       focused_field: current ? describe(current) : null,
       fields,
       ...(all.length > fields.length ? { note: `Showing ${fields.length} of ${all.length} fields.` } : {}),
-      ...(document.querySelector("iframe") ? { frames_note: "This page has embedded frames; fields inside them can't be read yet." } : {}),
+      ...(hasVisibleFrame() ? { frames_note: "This page has embedded frames; fields inside them can't be read yet." } : {}),
     };
   }
 
@@ -235,9 +273,35 @@
     return undefined;
   }
 
+  // The field a click was about: the field itself, its linked label, or the
+  // only field in the question box around the click (e.g. clicking the
+  // question text, or a "Yes" label that isn't linked to its button).
+  function fieldNear(target) {
+    if (!(target instanceof Element)) return null;
+    if (isField(target)) return target;
+    const custom = target.closest(CUSTOM);
+    if (isField(custom)) return custom;
+    const control = target.closest("label")?.control;
+    if (isField(control)) return control;
+    for (let node = target, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+      if (node.matches("form, body, main")) break;
+      const inside = [...node.querySelectorAll(`${NATIVE}, ${CUSTOM}`)].filter((f) => isField(f) && isVisible(f));
+      if (inside.length === 1) return inside[0];
+      if (inside.length > 1) {
+        const oneGroup = inside.every(isRadio) && new Set(inside.map((f) => radioGroup(f)[0])).size === 1;
+        return oneGroup ? inside[0] : null;
+      }
+    }
+    return null;
+  }
+
   document.addEventListener("focusin", (e) => {
     const el = isField(e.target) ? e.target : e.target?.closest?.(CUSTOM);
     if (isField(el)) lastFocused = el;
+  }, true);
+  document.addEventListener("pointerdown", (e) => {
+    const el = fieldNear(e.target);
+    if (el) lastFocused = el;
   }, true);
 
   if (globalThis.chrome?.runtime?.onMessage) {
