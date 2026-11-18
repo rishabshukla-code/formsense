@@ -80,7 +80,7 @@ sequenceDiagram
 - **Visible:** the panel shows a note every time the page is read or a field is highlighted.
 - **Read-only:** FormSense can't fill in or submit forms.
 - **Local first:** the LiveKit server and token server run on your computer. Only audio and text go to AssemblyAI, and search queries go to Parallel.
-- **Limited reach:** for now the extension only runs on the local practice form (`localhost:3000`).
+- **Asks first:** it reads the practice form out of the box. On other websites it asks for your OK once, and even then it only reads a page when you ask a question.
 - **Not legal advice:** FormSense gives general information and names its sources.
 
 ## Run it
@@ -137,7 +137,8 @@ More detail, and how to test without loading the extension: [extension/README.md
 - [x] Official sources for legal and official terms
 - [x] Highlight fields, and list what's left
 - [ ] Demo video
-- [ ] Real websites beyond the practice form, starting with simple public forms
+- [x] Real websites (with a one-time permission), including forms without proper labels
+- [ ] Fields inside embedded frames and shadow DOM
 - [ ] Optional "fill this in for me", always with confirmation, never submitting
 
 ## Credits
