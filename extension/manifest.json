@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Form Copilot",
-  "version": "0.1.0",
-  "description": "Talk to a voice assistant that helps you understand the form you're filling in.",
+  "name": "FormSense",
+  "version": "0.2.0",
+  "description": "A voice copilot that explains the form you're filling in.",
   "permissions": ["sidePanel"],
   "host_permissions": ["http://localhost:3000/*"],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "sidepanel.html" },
-  "action": { "default_title": "Open Form Copilot" }
+  "action": { "default_title": "Open FormSense" },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/practice*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }

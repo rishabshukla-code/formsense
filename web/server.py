@@ -46,9 +46,14 @@ async def index(_: web.Request) -> web.FileResponse:
     return web.FileResponse(STATIC / "index.html")
 
 
+async def practice(_: web.Request) -> web.FileResponse:
+    return web.FileResponse(STATIC / "practice.html")
+
+
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index)
+    app.router.add_get("/practice", practice)
     app.router.add_get("/api/token", token)
     app.router.add_static("/static", STATIC)
     # Preview the Chrome extension's side panel as a normal page while developing.

@@ -79,10 +79,15 @@ def start_agent(env: dict) -> tuple[subprocess.Popen, threading.Event]:
     )
 
     def pump() -> None:
+        # Keep reading no matter what: if this loop stops, the agent blocks as
+        # soon as its output pipe fills up.
         for line in proc.stdout:
-            print(line, end="", flush=True)
             if "registered worker" in line:
                 ready.set()
+            try:
+                print(line, end="", flush=True)
+            except Exception:
+                pass
 
     threading.Thread(target=pump, daemon=True).start()
     return proc, ready
@@ -91,6 +96,10 @@ def start_agent(env: dict) -> tuple[subprocess.Popen, threading.Event]:
 def main() -> None:
     if not (ROOT / ".env.local").exists():
         sys.exit("Missing .env.local. Copy .env.example and add ASSEMBLYAI_API_KEY.")
+
+    # Agent logs contain characters (like "·") that older Windows encodings
+    # can't print; show a placeholder instead of crashing.
+    sys.stdout.reconfigure(errors="replace")
 
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     env.pop("HTTPS_PROXY", None)  # LiveKit's worker would route localhost through it

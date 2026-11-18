@@ -10,14 +10,17 @@ from pathlib import Path
 
 import assemblyai_tts
 from dotenv import dotenv_values, load_dotenv
+from livekit import rtc
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
     ConversationItemAddedEvent,
     JobContext,
+    RunContext,
     TurnHandlingOptions,
     cli,
+    function_tool,
     llm,
     mcp,
 )
@@ -53,6 +56,20 @@ INSTRUCTIONS = textwrap.dedent(
       URLs or emoji.
     - Keep replies to one to three short sentences. Ask one question at a time.
     - Spell out numbers, dates, phone numbers and email addresses naturally.
+
+    Helping with forms:
+    - The user may be filling in a web form in their browser. When they ask
+      about a form, a field, "this", "here" or "this question", call
+      get_form_context first, every time: they may have moved to another
+      field since you last looked, so never reuse an earlier result. "This"
+      means focused_field, the field they last clicked. If focused_field is
+      empty, ask which field they mean.
+    - Explain what the field is asking in plain words, using its label, help
+      text and choices, and give one short example of a good answer.
+    - You can't see what the user typed, only whether a field is filled in.
+      Never ask them to read out personal details such as ID numbers.
+    - You can't fill in or submit the form yourself.
+    - If get_form_context says it can't read the page, tell the user briefly.
 
     How you use the web:
     - Answer greetings, arithmetic, stable common knowledge, and questions already
@@ -115,6 +132,38 @@ class SearchAssistant(Agent):
             ),
             tools=[self.parallel],
         )
+
+    @function_tool
+    async def get_form_context(self, context: RunContext) -> str:
+        """Read the form on the user's current browser tab.
+
+        Returns JSON: the page title, the field the user last clicked
+        (focused_field), and every field's label, section, help text, choices,
+        whether it is required and whether it is filled in. It never includes
+        what the user typed.
+        """
+        try:
+            room_io = context.session.room_io
+        except RuntimeError:  # console mode: no browser in the loop
+            return "The user is talking from the terminal, so there is no page to read."
+        user = room_io.linked_participant
+        if user is None:
+            return "No user is connected, so there is no page to read."
+        try:
+            return await room_io.room.local_participant.perform_rpc(
+                destination_identity=user.identity,
+                method="get_form_context",
+                payload="",
+                response_timeout=5.0,
+            )
+        except rtc.RpcError as err:
+            if err.code == rtc.RpcError.ErrorCode.UNSUPPORTED_METHOD:
+                return (
+                    "The user isn't using the FormSense browser extension, "
+                    "so you can't see their page."
+                )
+            logger.warning("get_form_context failed: %s", err.message)
+            return "Couldn't read the page right now."
 
     async def on_enter(self) -> None:
         if not self.parallel.tools:

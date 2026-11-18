@@ -39,6 +39,65 @@ function upsertBubble(id, who, text, final) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+function addNote(text) {
+  $("empty")?.remove();
+  const el = document.createElement("p");
+  el.className = "note";
+  el.textContent = text;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---- Reading the form on the current tab (asked for by the agent) ----
+
+const NOT_READABLE = "FormSense can't read this page. For now it only works on the practice form at http://localhost:3000/practice.";
+
+async function readFormInExtension() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab) return { error: "No browser tab is open." };
+  try {
+    const result = await chrome.tabs.sendMessage(tab.id, { type: "formsense:get_form_context" });
+    return result ?? { error: NOT_READABLE };
+  } catch {
+    return { error: NOT_READABLE };
+  }
+}
+
+// Development only: when this panel is opened as a normal page, ask a practice
+// form tab of the same site (with content.js injected) over BroadcastChannel.
+function readFormInDevPreview() {
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel("formsense-dev");
+    const reqId = crypto.randomUUID();
+    const timer = setTimeout(() => { channel.close(); resolve({ error: NOT_READABLE }); }, 2000);
+    channel.onmessage = ({ data }) => {
+      if (data?.type !== "formsense:result" || data.reqId !== reqId) return;
+      clearTimeout(timer);
+      channel.close();
+      resolve(data.result);
+    };
+    channel.postMessage({ type: "formsense:get_form_context", reqId });
+  });
+}
+
+async function getFormContext() {
+  const result = IN_EXTENSION ? await readFormInExtension() : await readFormInDevPreview();
+  if (result.error) {
+    addNote("Couldn't read this page");
+    return JSON.stringify(result);
+  }
+  // LiveKit RPC replies are limited to 15 KB; drop fields from the end if needed.
+  let json = JSON.stringify(result);
+  while (json.length > 14000 && result.fields.length > 1) {
+    result.fields.pop();
+    result.note = "Some fields were left out to keep this short.";
+    json = JSON.stringify(result);
+  }
+  const where = result.focused_field ? `, you're on "${result.focused_field.label}"` : "";
+  addNote(`Read the form (${result.fields.length} fields${where})`);
+  return json;
+}
+
 // Mic level bar: shows whether the panel is actually capturing your voice.
 let meter = null;
 function startMeter() {
@@ -123,6 +182,7 @@ async function start() {
     const { url, token } = await res.json();
 
     room = new Room({ adaptiveStream: true, dynacast: true });
+    room.localParticipant.registerRpcMethod("get_form_context", () => getFormContext());
 
     room.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === Track.Kind.Audio) document.body.appendChild(track.attach());

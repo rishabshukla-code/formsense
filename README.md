@@ -2,7 +2,11 @@
 
 A voice copilot in your browser that explains any form field, out loud, with official sources. Click a field, ask "what is this asking for?", and FormSense tells you.
 
-**Status:** work in progress. Done so far: a Chrome side panel you can talk to (see [extension/README.md](extension/README.md)), plus a one-click launcher (`start-web.bat`). Next: reading the form you're on.
+**Status:** work in progress.
+
+- Done: a Chrome side panel you can talk to, and a one-click launcher (`start-web.bat`).
+- Done: the copilot reads the form you're on and explains the field you clicked. It works on a local practice form at `localhost:3000/practice`. See [extension/README.md](extension/README.md).
+- Next: official sources for answers, and highlighting fields on the page.
 
 Built on the [AssemblyAI + Parallel voice starter](https://github.com/hsingh-aai/assemblyai-parallel-voice-agent). The starter's original README follows.
 
