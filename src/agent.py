@@ -69,6 +69,9 @@ INSTRUCTIONS = textwrap.dedent(
       to another field since you last looked, so never reuse an earlier
       result. "This" means focused_field, the field they last clicked. If
       focused_field is empty, ask which field they mean.
+    - If focused_field has list_options, it's one box in a "check all that
+      apply" list: "this question" means the whole list, and checked_options
+      are every box they've ticked, not just the last one they clicked.
     - If get_form_context says FormSense needs permission, tell the user to
       click "Allow on websites" in the FormSense panel and then ask again.
     - If it says it can't read the page, say so in one sentence and offer to

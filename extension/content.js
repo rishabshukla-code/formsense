@@ -190,6 +190,24 @@
     return undefined;
   }
 
+  const isCheckbox = (el) => el.type === "checkbox" || el.getAttribute("role") === "checkbox";
+
+  // The other boxes in the same "check all that apply" list: those inside the
+  // question's labelled box, or else the smallest box holding more than one.
+  function checkboxList(el) {
+    const boxesIn = (node) => [...node.querySelectorAll('input[type=checkbox], [role=checkbox]')].filter(isField);
+    for (let node = el.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
+      if (node.matches("form, body")) break;
+      if (node.id && document.querySelector(`label[for="${CSS.escape(node.id)}"]`)) return boxesIn(node);
+    }
+    for (let node = el.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+      if (node.matches("body")) break;
+      const boxes = boxesIn(node);
+      if (boxes.length > 1) return boxes;
+    }
+    return [el];
+  }
+
   function isFilled(el) {
     if (isRadio(el)) return radioGroup(el).some((r) => r.checked || r.getAttribute("aria-checked") === "true");
     if (el.type === "checkbox") return el.checked;
@@ -233,6 +251,19 @@
     return field;
   }
 
+  // For a box in a "check all that apply" list, describe the whole list:
+  // every option, and which ones are ticked (the same yes/no as "filled").
+  function describeFocused(el) {
+    const field = describe(el);
+    if (!isCheckbox(el)) return field;
+    const list = checkboxList(el);
+    if (list.length < 2) return field;
+    field.question = containerLabel(el) || field.label;
+    field.list_options = list.map((box) => optionText(box));
+    field.checked_options = list.filter(isFilled).map((box) => optionText(box));
+    return field;
+  }
+
   function currentField() {
     if (lastFocused && document.contains(lastFocused)) return lastFocused;
     const active = document.activeElement;
@@ -262,7 +293,7 @@
     return {
       page_title: clean(document.title),
       page: location.origin + location.pathname,
-      focused_field: current ? describe(current) : null,
+      focused_field: current ? describeFocused(current) : null,
       fields,
       ...(all.length > fields.length ? { note: `Showing ${fields.length} of ${all.length} fields.` } : {}),
       ...(hasVisibleFrame() ? { frames_note: "This page has embedded frames; fields inside them can't be read yet." } : {}),
