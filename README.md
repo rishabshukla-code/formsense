@@ -4,7 +4,9 @@
 
 Click a field, ask "what is this asking for?", and FormSense tells you in plain words. It reads the form you're on, looks up official guidance when a term needs it, and points at the fields you still have to fill in.
 
-> Demo video: coming soon.
+[![Watch the FormSense demo (2 minutes)](https://img.youtube.com/vi/KTQ4OhLx8Vk/hqdefault.jpg)](https://youtu.be/KTQ4OhLx8Vk)
+
+**[▶ Watch the 2-minute demo](https://youtu.be/KTQ4OhLx8Vk)**: FormSense explaining a real benefits screener for older adults.
 
 ## Why
 
@@ -136,7 +138,7 @@ More detail, and how to test without loading the extension: [extension/README.md
 - [x] Read the form and explain the clicked field
 - [x] Official sources for legal and official terms
 - [x] Highlight fields, and list what's left
-- [ ] Demo video
+- [x] [Demo video](https://youtu.be/KTQ4OhLx8Vk)
 - [x] Real websites (with a one-time permission), including forms without proper labels
 - [ ] Fields inside embedded frames and shadow DOM
 - [ ] Optional "fill this in for me", always with confirmation, never submitting
